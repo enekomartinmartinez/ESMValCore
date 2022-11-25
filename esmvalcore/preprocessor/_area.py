@@ -23,6 +23,7 @@ from ._shared import (
     get_iris_analysis_operation,
     guess_bounds,
     operator_accept_weights,
+    operator_accept_mdtol,
 )
 
 logger = logging.getLogger(__name__)
@@ -202,7 +203,7 @@ def compute_area_weights(cube):
     return weights
 
 
-def area_statistics(cube, operator):
+def area_statistics(cube, operator, mdtol=1):
     """Apply a statistical operator in the horizontal direction.
 
     The average in the horizontal direction. We assume that the
@@ -234,11 +235,17 @@ def area_statistics(cube, operator):
 
     Parameters
     ----------
-        cube: iris.cube.Cube
-            Input cube.
-        operator: str
-            The operation, options: mean, median, min, max, std_dev, sum,
-            variance, rms.
+    cube: iris.cube.Cube
+        Input cube.
+    operator: str
+        The operation, options: mean, median, min, max, std_dev, sum,
+        variance, rms.
+    mdtol: float
+        Tolerance of missing data. The value returned will be masked if the
+        fraction of data to missing data is less than or equal to mdtol.
+        mdtol=0 means no missing data is tolerated while mdtol=1 will
+        return the resulting value from the aggregation function.
+        Defaults to 1.
 
     Returns
     -------
@@ -296,12 +303,13 @@ def area_statistics(cube, operator):
 
     # TODO: implement weighted stdev, median, s var when available in iris.
     # See iris issue: https://github.com/SciTools/iris/issues/3208
-
+    collapsed_kwargs = {}
     if operator_accept_weights(operator):
-        result = cube.collapsed(coord_names, operation, weights=grid_areas)
-    else:
-        # Many IRIS analysis functions do not accept weights arguments.
-        result = cube.collapsed(coord_names, operation)
+        collapsed_kwargs["weights"] = grid_areas
+    if operator_accept_mdtol(operator):
+        collapsed_kwargs["mdtol"] = mdtol
+
+    result = cube.collapsed(coord_names, operation, **collapsed_kwargs)
 
     new_dtype = result.dtype
     if original_dtype != new_dtype:

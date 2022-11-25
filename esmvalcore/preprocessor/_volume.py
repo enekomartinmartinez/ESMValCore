@@ -9,7 +9,11 @@ import dask.array as da
 import iris
 import numpy as np
 
-from ._shared import get_iris_analysis_operation, operator_accept_weights
+from ._shared import (
+    get_iris_analysis_operation,
+    operator_accept_weights,
+    operator_accept_mdtol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +147,7 @@ def volume_statistics(cube, operator):
     return result
 
 
-def axis_statistics(cube, axis, operator):
+def axis_statistics(cube, axis, operator, mdtol=1):
     """Perform statistics along a given axis.
 
     Operates over an axis direction. If weights are required,
@@ -160,6 +164,12 @@ def axis_statistics(cube, axis, operator):
         Statistics to perform. Available operators are:
         'mean', 'median', 'std_dev', 'sum', 'variance',
         'min', 'max', 'rms'.
+    mdtol: float
+        Tolerance of missing data. The value returned will be masked if the
+        fraction of data to missing data is less than or equal to mdtol.
+        mdtol=0 means no missing data is tolerated while mdtol=1 will
+        return the resulting value from the aggregation function.
+        Defaults to 1.
 
     Returns
     -------
@@ -179,6 +189,7 @@ def axis_statistics(cube, axis, operator):
             'axis_statistics not implemented for '
             'multidimensional coordinates.')
     operation = get_iris_analysis_operation(operator)
+    collapsed_kwargs = {}
     if operator_accept_weights(operator):
         coord_dim = coord_dims[0]
         expand = list(range(cube.ndim))
@@ -186,14 +197,11 @@ def axis_statistics(cube, axis, operator):
         bounds = coord.core_bounds()
         weights = np.abs(bounds[..., 1] - bounds[..., 0])
         weights = np.expand_dims(weights, expand)
-        weights = da.broadcast_to(weights, cube.shape)
-        result = cube.collapsed(coord,
-                                operation,
-                                weights=weights)
-    else:
-        result = cube.collapsed(coord, operation)
+        collapsed_kwargs["weights"] = da.broadcast_to(weights, cube.shape)
+    if operator_accept_mdtol(operator):
+        collapsed_kwargs["mdtol"] = mdtol
 
-    return result
+    return cube.collapsed(coord, operation, **collapsed_kwargs)
 
 
 def depth_integration(cube):

@@ -69,3 +69,20 @@ def operator_accept_weights(operator):
 
     """
     return operator.lower() in ('mean', 'sum', 'rms')
+
+
+def operator_accept_mdtol(operator):
+    """
+    Get if operator support mdtol.
+
+    Parameters
+    ----------
+    operator: str
+        A named operator.
+
+    Returns
+    -------
+        bool: True if operator support mdtol, False otherwise
+
+    """
+    return operator.lower() in ('mean',)

@@ -22,7 +22,11 @@ from iris.time import PartialDateTime
 from esmvalcore.cmor.check import _get_next_month, _get_time_bounds
 from esmvalcore.iris_helpers import date2num
 
-from ._shared import get_iris_analysis_operation, operator_accept_weights
+from ._shared import (
+    get_iris_analysis_operation,
+    operator_accept_weights,
+    operator_accept_mdtol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -700,7 +704,8 @@ def decadal_statistics(cube, operator='mean'):
 def climate_statistics(cube,
                        operator='mean',
                        period='full',
-                       seasons=('DJF', 'MAM', 'JJA', 'SON')):
+                       seasons=('DJF', 'MAM', 'JJA', 'SON'),
+                       mdtol=1):
     """Compute climate statistics with the specified granularity.
 
     Computes statistics for the whole dataset. It is possible to get them for
@@ -724,6 +729,13 @@ def climate_statistics(cube,
     seasons: list or tuple of str, optional
         Seasons to use if needed. Defaults to ('DJF', 'MAM', 'JJA', 'SON')
 
+    mdtol: float
+        Tolerance of missing data. The value returned will be masked if the
+        fraction of data to missing data is less than or equal to mdtol.
+        mdtol=0 means no missing data is tolerated while mdtol=1 will
+        return the resulting value from the aggregation function.
+        Defaults to 1.
+
     Returns
     -------
     iris.cube.Cube
@@ -731,24 +743,22 @@ def climate_statistics(cube,
     """
     original_dtype = cube.dtype
     period = period.lower()
+    collapsed_kwargs = {}
+
+    operator_method = get_iris_analysis_operation(operator)
+    if operator_accept_mdtol(operator):
+        collapsed_kwargs["mdtol"] = mdtol
 
     if period in ('full', ):
-        operator_method = get_iris_analysis_operation(operator)
         if operator_accept_weights(operator):
             time_weights = get_time_weights(cube)
-            if time_weights.min() == time_weights.max():
-                # No weighting needed.
-                clim_cube = cube.collapsed('time', operator_method)
-            else:
-                clim_cube = cube.collapsed('time',
-                                           operator_method,
-                                           weights=time_weights)
-        else:
-            clim_cube = cube.collapsed('time', operator_method)
+            if not time_weights.min() == time_weights.max():
+                collapsed_kwargs["weights"] = time_weights
+        clim_cube = cube.collapsed('time', operator_method, **collapsed_kwargs)
     else:
         clim_coord = _get_period_coord(cube, period, seasons)
-        operator = get_iris_analysis_operation(operator)
-        clim_cube = cube.aggregated_by(clim_coord, operator)
+        clim_cube = cube.aggregated_by(clim_coord, operator_method,
+                                       **collapsed_kwargs)
         clim_cube.remove_coord('time')
         _aggregate_time_fx(clim_cube, cube)
         if clim_cube.coord(clim_coord.name()).is_monotonic():
